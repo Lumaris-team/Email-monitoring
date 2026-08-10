@@ -1,5 +1,5 @@
 export interface Env {
-  SERVICES_EMAIL: D1Database;
+  SERVICES_EMAIL: any;
 }
 
 function subdomainFromHost(host: string) {
@@ -44,11 +44,11 @@ export default {
         payload.raw = form.get('raw')?.toString() || '';
         // attachments metadata
         const attachments: any[] = [];
-        for (const entry of form.entries()) {
-          const [k, v] = entry as [string, any];
-          if (v && typeof (v as any).arrayBuffer === 'function') {
-            const file = v as File;
-            attachments.push({ field: k, name: file.name, size: file.size, type: file.type });
+        for (const key of form.keys()) {
+          const v = form.get(key) as any;
+          if (v && typeof v.arrayBuffer === 'function') {
+            const file = v as any;
+            attachments.push({ field: key, name: file.name, size: file.size, type: file.type });
           }
         }
         payload.attachments = attachments;
