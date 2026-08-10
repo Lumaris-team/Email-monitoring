@@ -16,3 +16,5 @@ CREATE TABLE IF NOT EXISTS emails (
   size INTEGER,
   subdomain TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_emails_sender ON emails(sender);

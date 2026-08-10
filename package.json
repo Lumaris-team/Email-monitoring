@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "build": "wrangler build",
-    "deploy": "wrangler publish"
+    "build": "tsc",
+    "wrangler:build": "wrangler build",
+    "predeploy": "npm run build",
+    "deploy": "npm run wrangler:build && wrangler publish"
   },
   "devDependencies": {
     "wrangler": "^3.0.0",
