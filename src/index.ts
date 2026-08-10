@@ -44,11 +44,20 @@ export default {
         payload.raw = form.get('raw')?.toString() || '';
         // attachments metadata
         const attachments: any[] = [];
-        for (const key of form.keys()) {
-          const v = form.get(key) as any;
-          if (v && typeof v.arrayBuffer === 'function') {
-            const file = v as any;
-            attachments.push({ field: key, name: file.name, size: file.size, type: file.type });
+        const anyForm = form as any;
+        if (typeof anyForm.entries === 'function') {
+          for (const entry of anyForm.entries()) {
+            const [k, v] = entry as [string, any];
+            if (v && typeof v.arrayBuffer === 'function') {
+              const file = v as any;
+              attachments.push({ field: k, name: file.name, size: file.size, type: file.type });
+            }
+          }
+        } else {
+          const maybeAttach = anyForm.get ? (anyForm.get('attachment') || anyForm.get('attachments')) : null;
+          if (maybeAttach && typeof maybeAttach.arrayBuffer === 'function') {
+            const file = maybeAttach as any;
+            attachments.push({ field: 'attachment', name: file.name, size: file.size, type: file.type });
           }
         }
         payload.attachments = attachments;
