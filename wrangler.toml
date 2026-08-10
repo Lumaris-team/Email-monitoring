@@ -6,7 +6,7 @@ zone_id = "<YOUR_ZONE_ID>"
 
 [[d1_databases]]
 binding = "SERVICES_EMAIL"
-database_name = "services-email"
+database_name = "services_mail"
 database_id = "5269c612-421e-4d93-bfa2-ec69040123c5"
 
 # Routes: configure Email Routing to forward to this worker endpoint.
