@@ -1,6 +1,6 @@
 name = "email-monitoring-worker"
 compatibility_date = "2026-08-10"
-account_id = "<YOUR_ACCOUNT_ID>"
+account_id = "5b6797aa57ca0f90cef50399ebbdda59"
 workers_dev = false
 zone_id = "<YOUR_ZONE_ID>"
 
