@@ -75,16 +75,14 @@ export default {
     const id = crypto.randomUUID();
     const received_at = new Date().toISOString();
 
-    const stmt = db.prepare(
-      `INSERT INTO emails (id, received_at, message_id, sender, recipients, cc, bcc, subject, text_body, html_body, headers, attachments, raw, size, subdomain)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
+    const insertSql = `INSERT INTO emails (id, received_at, message_id, sender, recipients, cc, bcc, subject, text_body, html_body, headers, attachments, raw, size, subdomain)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    const stmt = db.prepare(insertSql);
 
     const recipients = payload.to || '';
     const size = payload.size || 0;
     try {
-      console.log('D1 INSERT starting', { id, received_at, subdomain, messageId: payload.messageId });
-      const res = await stmt.run(
+      const params = [
         id,
         received_at,
         payload.messageId || '',
@@ -99,8 +97,17 @@ export default {
         JSON.stringify(payload.attachments || []),
         payload.raw || '',
         size,
-        subdomain
-      );
+        subdomain,
+      ];
+
+      const placeholderCount = (insertSql.match(/\?/g) || []).length;
+      console.log('D1 INSERT starting', { id, received_at, subdomain, messageId: payload.messageId, placeholderCount, paramsLength: params.length });
+      if (placeholderCount !== params.length) {
+        console.error('D1 INSERT parameter count mismatch', { placeholderCount, paramsLength: params.length });
+        return new Response('Internal Server Error', { status: 500 });
+      }
+
+      const res = await stmt.bind(...params).run();
       console.log('D1 INSERT result', res);
       return new Response(JSON.stringify({ ok: true, id, res }), { status: 201, headers: { 'content-type': 'application/json' } });
     } catch (e) {
@@ -133,17 +140,16 @@ export default {
       const id = crypto.randomUUID();
       const received_at = new Date().toISOString();
 
-      const stmt = db.prepare(
-        `INSERT INTO emails (id, received_at, message_id, sender, recipients, cc, bcc, subject, text_body, html_body, headers, attachments, raw, size, subdomain)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      );
+      const insertSql = `INSERT INTO emails (id, received_at, message_id, sender, recipients, cc, bcc, subject, text_body, html_body, headers, attachments, raw, size, subdomain)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      const stmt = db.prepare(insertSql);
 
       const messageId = message.messageId || message['message-id'] || '';
       const recipients = toField || '';
       const size = message.size || 0;
 
       try {
-        const res = await stmt.run(
+        const params = [
           id,
           received_at,
           messageId,
@@ -158,9 +164,16 @@ export default {
           JSON.stringify(attachments || []),
           message.raw || '',
           size,
-          subdomain
-        );
-        console.log('email() D1 INSERT result', { id, res });
+          subdomain,
+        ];
+        const placeholderCount = (insertSql.match(/\?/g) || []).length;
+        console.log('email() D1 INSERT starting', { id, received_at, subdomain, messageId, placeholderCount, paramsLength: params.length });
+        if (placeholderCount !== params.length) {
+          console.error('email() D1 parameter count mismatch', { placeholderCount, paramsLength: params.length });
+        } else {
+          const res = await stmt.bind(...params).run();
+          console.log('email() D1 INSERT result', { id, res });
+        }
       } catch (innerErr) {
         const ie: any = innerErr;
         console.error('email() D1 INSERT failed', ie && ie.message ? ie.message : ie, ie && ie.stack ? ie.stack : 'no-stack');
