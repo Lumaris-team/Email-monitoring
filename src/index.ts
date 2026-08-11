@@ -29,6 +29,46 @@ function parseEmailHeaders(raw: string) {
   return out;
 }
 
+// Extract simple text and html bodies from raw RFC-5322 / MIME message.
+function extractTextHtmlFromRaw(raw: string) {
+  const result = { text: '', html: '' };
+  if (!raw) return result;
+
+  // Try to find a multipart boundary
+  const boundaryMatch = raw.match(/boundary="?([^";\r\n]+)"?/i);
+  if (boundaryMatch) {
+    const boundary = boundaryMatch[1];
+    const parts = raw.split(new RegExp('--' + boundary + '(?:--)?\r?\n'));
+    // Iterate parts and pick the first text/plain or text/html
+    for (const p of parts) {
+      if (!p || p.trim().length === 0) continue;
+      const headerBodySplit = p.split(/\r?\n\r?\n/);
+      if (headerBodySplit.length < 2) continue;
+      const hdr = headerBodySplit[0];
+      const body = headerBodySplit.slice(1).join('\n\n').trim();
+      const ctMatch = hdr.match(/content-type:\s*([^;\r\n]+)/i);
+      const ct = ctMatch ? ctMatch[1].toLowerCase().trim() : '';
+      if (!result.text && ct.includes('text/plain')) {
+        result.text = body;
+      }
+      if (!result.html && ct.includes('text/html')) {
+        result.html = body;
+      }
+      if (result.text && result.html) break;
+    }
+    return result;
+  }
+
+  // Not multipart: fallback to everything after first blank line
+  const split = raw.split(/\r?\n\r?\n/);
+  const body = split.length > 1 ? split.slice(1).join('\n\n').trim() : '';
+  if (!body) return result;
+  // Heuristic: if body contains HTML tags, treat as html, else plain text
+  if (/<[a-z][\s\S]*>/i.test(body)) result.html = body;
+  else result.text = body;
+  return result;
+}
+
 function selectDbForSubdomain(subdomain: string, env: Env) {
   // For now there is only one D1: services-email bound to SERVICES_EMAIL.
   // Extend this function to map other subdomains to different D1 bindings.
@@ -102,6 +142,7 @@ export default {
     const recipients = payload.to || '';
     const size = payload.size || 0;
     try {
+      const rawToStore = (payload.text || payload.html) ? '' : (payload.raw || '');
       const params = [
         id,
         received_at,
@@ -115,7 +156,7 @@ export default {
         payload.html || '',
         JSON.stringify(payload.headers || {}),
         JSON.stringify(payload.attachments || []),
-        payload.raw || '',
+        rawToStore,
         size,
         subdomain,
       ];
@@ -181,7 +222,15 @@ export default {
 
       // Sanitize attachments: keep only metadata to avoid streaming binary into D1
       const sanitizedAttachments = Array.isArray(attachments)
-        ? attachments.map((a: any) => ({ name: a && a.name ? a.name : a.filename || null, size: a && a.size ? a.size : null, type: a && a.type ? a.type : null }))
+        ? attachments.map((a: any) => {
+            const name = a && (a.name || a.filename || a.fileName || (a.headers && a.headers['content-disposition'] && (() => {
+              const m = String(a.headers['content-disposition']).match(/filename="?([^";]+)"?/);
+              return m ? m[1] : null;
+            })())) || null;
+            const type = a && (a.contentType || a.type || a.mime || (a.headers && (a.headers['content-type'] || a.headers['Content-Type'])) ) || null;
+            const size = a && (a.size || a.length || (typeof a.data === 'string' ? a.data.length : null)) || null;
+            return { name, size, type };
+          })
         : [];
 
       // Ensure raw is a string (Email Routing may supply a ReadableStream)
@@ -203,12 +252,18 @@ export default {
       const finalMessageId = messageId || parsedFromRaw['message-id'] || parsedFromRaw['message-id'] || '';
       const finalRecipients = recipients || parsedFromRaw['to'] || '';
 
-      // Extract simple body (everything after the first blank line). Use as fallback
-      // when `text` / `html` are missing. For multipart MIME this is a heuristic.
-      const rawParts = (rawString || '').split(/\r?\n\r?\n/);
-      const bodyPart = rawParts.length > 1 ? rawParts.slice(1).join('\n\n').trim() : '';
-      const finalText = text || (bodyPart && !/<[a-z][\s\S]*>/i.test(bodyPart) ? bodyPart : '');
-      const finalHtml = html || (bodyPart && /<[a-z][\s\S]*>/i.test(bodyPart) ? bodyPart : '');
+      // Extract text/html parts from raw and use as fallback when `text`/`html` are missing.
+      const extracted = extractTextHtmlFromRaw(rawString || '');
+      // Limit stored body lengths to a practical size
+      const MAX_TEXT = 5000;
+      const MAX_HTML = 20000;
+      const finalText = text || (extracted.text ? (extracted.text.length > MAX_TEXT ? extracted.text.slice(0, MAX_TEXT) : extracted.text) : '');
+      const finalHtml = html || (extracted.html ? (extracted.html.length > MAX_HTML ? extracted.html.slice(0, MAX_HTML) : extracted.html) : '');
+
+      // Decide whether to persist raw: only store raw if both text and html are empty
+      const rawToStore = (finalText || finalHtml) ? '' : (rawString || '');
+      // Discard rawString variable to avoid accidental logging later
+      rawString = '';
 
       try {
         const params = [
@@ -224,7 +279,7 @@ export default {
           finalHtml,
           JSON.stringify(mergedHeaders || {}),
           JSON.stringify(sanitizedAttachments || []),
-          rawString || '',
+          rawToStore,
           size,
           subdomain,
         ];
