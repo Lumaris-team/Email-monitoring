@@ -98,7 +98,7 @@ async function readAttachmentContent(att: any): Promise<{ base64: string | null;
     if (typeof att.arrayBuffer === 'function') {
       const buf = await att.arrayBuffer();
       size = buf.byteLength;
-      if (size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
+      if (size !== null && size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
       const b64 = uint8ArrayToBase64(new Uint8Array(buf));
       return { base64: b64, size };
     }
@@ -107,13 +107,13 @@ async function readAttachmentContent(att: any): Promise<{ base64: string | null;
     if (att instanceof ArrayBuffer) {
       const buf = att as ArrayBuffer;
       size = buf.byteLength;
-      if (size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
+      if (size !== null && size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
       return { base64: uint8ArrayToBase64(new Uint8Array(buf)), size };
     }
     if (att && att.buffer instanceof ArrayBuffer) {
       const buf = att.buffer as ArrayBuffer;
       size = buf.byteLength;
-      if (size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
+      if (size !== null && size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
       return { base64: uint8ArrayToBase64(new Uint8Array(buf)), size };
     }
 
@@ -121,7 +121,7 @@ async function readAttachmentContent(att: any): Promise<{ base64: string | null;
     if (att && (typeof att.getReader === 'function' || typeof att.stream === 'function' || typeof att.body === 'object')) {
       const buf = await new Response(att).arrayBuffer();
       size = buf.byteLength;
-      if (size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
+      if (size !== null && size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
       return { base64: uint8ArrayToBase64(new Uint8Array(buf)), size };
     }
 
