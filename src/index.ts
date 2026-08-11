@@ -162,7 +162,8 @@ export default {
         );
         console.log('email() D1 INSERT result', { id, res });
       } catch (innerErr) {
-        console.error('email() D1 INSERT failed', innerErr && innerErr.message ? innerErr.message : innerErr, innerErr && innerErr.stack ? innerErr.stack : 'no-stack');
+        const ie: any = innerErr;
+        console.error('email() D1 INSERT failed', ie && ie.message ? ie.message : ie, ie && ie.stack ? ie.stack : 'no-stack');
       }
     } catch (e) {
       console.error('email() handler error', e);
