@@ -24,3 +24,66 @@ name = "EMAIL"
 
 [[email]]
 name = "EMAIL_HANDLER"
+
+
+# ------------------------------------------------------------------------------
+# Observability (informational placeholders - commented out)
+#
+# The Cloudflare Wrangler schema does not require or support every observability
+# integration via top-level fields. Below are safe, commented examples and
+# instructions for common observability setups you may want to enable. Uncomment
+# and populate values where supported by your account/stack, or follow the
+# referenced Cloudflare docs links.
+#
+# 1) Logging / Tail
+# - Use `npx wrangler tail --name <worker>` to stream logs in real time.
+# - For structured logs, send output to an external collector (R2, webhook, SIEM).
+#
+# Example: environment variable for external logging endpoint (uncomment to use)
+# [vars]
+# LOGGING_WEBHOOK = "https://logs.example.com/ingest"
+#
+# 2) Tracing / Distributed Tracing (example placeholders)
+# Cloudflare provides sampling/tracing via integrations (Cloudflare Radar, 3rd-party)
+# Example placeholders (not official keys; follow Cloudflare docs for integration):
+# [tracing]
+# enabled = true
+# sample_rate = 0.1
+# provider = "honeycomb"
+#
+# 3) Error tracking (Sentry example)
+# Add your Sentry DSN as an env var and initialize inside your Worker code.
+# [vars]
+# SENTRY_DSN = "https://<PUBLIC_KEY>@o0.ingest.sentry.io/<PROJECT_ID>"
+#
+# 4) Analytics Engine / Logpush placeholders
+# - Analytics Engine configuration is normally handled in the Cloudflare UI.
+# - Logpush jobs are created per-zone via API / Dashboard. Placeholder example:
+# [[logpush]]
+# name = "email-worker-logs"
+# dataset = "email_worker_logs"
+# destination = "s3://my-bucket/path/" # or https endpoint
+#
+# 5) Worker-specific metrics / observability flags
+# Some features require account-level or dashboard configuration; use the UI
+# to enable Email Service analytics, Workers analytics, and Logs to integrate
+# with your external observability provider.
+#
+# 6) Example of binding an external monitoring secret (commented)
+# [[vars]]
+# HONEYCOMB_WRITEKEY = "<write_key>"
+# HONEYCOMB_DATASET = "email_monitoring"
+#
+# 7) Use `wrangler dev` + `wrangler tail` during development to inspect requests.
+# Command examples:
+#   npx wrangler tail --name email-monitoring
+#   npx wrangler dev src/index.ts
+#
+# Links:
+# - Routes & Workers routing: https://developers.cloudflare.com/workers/configuration/routing/routes/
+# - Email Routing docs: https://developers.cloudflare.com/email-service/
+# - Logs & Analytics: https://developers.cloudflare.com/logs/
+# - Logpush API: https://developers.cloudflare.com/logs/logpush/quickstart/
+#
+# Uncomment and adapt the placeholders above to your account and provider.
+# ------------------------------------------------------------------------------

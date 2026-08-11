@@ -82,26 +82,31 @@ export default {
 
     const recipients = payload.to || '';
     const size = payload.size || 0;
-
-    await stmt.run(
-      id,
-      received_at,
-      payload.messageId || '',
-      payload.from || '',
-      recipients,
-      payload.cc || '',
-      payload.bcc || '',
-      payload.subject || '',
-      payload.text || '',
-      payload.html || '',
-      JSON.stringify(payload.headers || {}),
-      JSON.stringify(payload.attachments || []),
-      payload.raw || '',
-      size,
-      subdomain
-    );
-
-    return new Response(JSON.stringify({ ok: true, id }), { status: 201, headers: { 'content-type': 'application/json' } });
+    try {
+      console.log('D1 INSERT starting', { id, received_at, subdomain, messageId: payload.messageId });
+      const res = await stmt.run(
+        id,
+        received_at,
+        payload.messageId || '',
+        payload.from || '',
+        recipients,
+        payload.cc || '',
+        payload.bcc || '',
+        payload.subject || '',
+        payload.text || '',
+        payload.html || '',
+        JSON.stringify(payload.headers || {}),
+        JSON.stringify(payload.attachments || []),
+        payload.raw || '',
+        size,
+        subdomain
+      );
+      console.log('D1 INSERT result', res);
+      return new Response(JSON.stringify({ ok: true, id, res }), { status: 201, headers: { 'content-type': 'application/json' } });
+    } catch (e) {
+      console.error('D1 INSERT error', e);
+      return new Response('Internal Server Error', { status: 500 });
+    }
   }
 ,
 
@@ -150,7 +155,7 @@ export default {
         subdomain
       );
     } catch (e) {
-      // swallow errors to avoid blocking email routing; consider logging
+      console.error('email() handler error', e);
     }
   }
 }
