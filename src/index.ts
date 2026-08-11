@@ -203,6 +203,13 @@ export default {
       const finalMessageId = messageId || parsedFromRaw['message-id'] || parsedFromRaw['message-id'] || '';
       const finalRecipients = recipients || parsedFromRaw['to'] || '';
 
+      // Extract simple body (everything after the first blank line). Use as fallback
+      // when `text` / `html` are missing. For multipart MIME this is a heuristic.
+      const rawParts = (rawString || '').split(/\r?\n\r?\n/);
+      const bodyPart = rawParts.length > 1 ? rawParts.slice(1).join('\n\n').trim() : '';
+      const finalText = text || (bodyPart && !/<[a-z][\s\S]*>/i.test(bodyPart) ? bodyPart : '');
+      const finalHtml = html || (bodyPart && /<[a-z][\s\S]*>/i.test(bodyPart) ? bodyPart : '');
+
       try {
         const params = [
           id,
@@ -213,8 +220,8 @@ export default {
           message.cc || parsedFromRaw['cc'] || '',
           message.bcc || parsedFromRaw['bcc'] || '',
           finalSubject,
-          text,
-          html,
+          finalText,
+          finalHtml,
           JSON.stringify(mergedHeaders || {}),
           JSON.stringify(sanitizedAttachments || []),
           rawString || '',
