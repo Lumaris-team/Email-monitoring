@@ -126,9 +126,11 @@ async function readAttachmentContent(att: any): Promise<{ base64: string | null;
     }
 
     // If att.data is a base64 string already or a binary string
-    if (typeof att.data === 'string') {
-      // Heuristic: treat as already base64 if it's longish and contains base64 chars
-      const maybe = att.data;
+    // common provider fields containing base64 content
+    const maybeBase64 = att && (att.base64 || att.b64 || att.content || att.data);
+    if (typeof maybeBase64 === 'string') {
+      const maybe = maybeBase64;
+      // if contains non-base64 chars, encode it
       if (maybe.length > 100 && /^[A-Za-z0-9+/=\s]+$/.test(maybe)) return { base64: maybe.replace(/\s+/g, ''), size: maybe.length };
       return { base64: btoa(maybe), size: maybe.length };
     }
@@ -142,7 +144,7 @@ async function readAttachmentContent(att: any): Promise<{ base64: string | null;
 async function processAttachmentsArray(arr: any[]): Promise<any[]> {
   if (!Array.isArray(arr)) return [];
   const out: any[] = [];
-  for (const a of arr) {
+    for (const a of arr) {
     try {
       const name = a && (a.name || a.filename || a.fileName || (a.headers && a.headers['content-disposition'] && (() => {
         const m = String(a.headers['content-disposition']).match(/filename="?([^";]+)"?/);
@@ -204,6 +206,7 @@ export default {
         }
         // process attachments into { base64, format, name, size }
         payload.attachments = await processAttachmentsArray(attachmentsRaw);
+        console.log('fetch() attachments processed', { count: payload.attachments.length, sample: payload.attachments.slice(0,3) });
         // capture headers if sent as a field
         const headersField = form.get('headers')?.toString();
         if (headersField) {
@@ -305,6 +308,7 @@ export default {
 
       // Process attachments into full objects with base64 (or "Attachment too large")
       const sanitizedAttachments = await processAttachmentsArray(attachments);
+      console.log('email() attachments processed', { count: sanitizedAttachments.length, sample: sanitizedAttachments.slice(0,3) });
 
       // Ensure raw is a string (Email Routing may supply a ReadableStream)
       let rawString = '';
