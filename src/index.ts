@@ -148,6 +148,33 @@ export default {
       const recipients = toField || '';
       const size = message.size || 0;
 
+      // Helper to read ReadableStream to string when present
+      async function streamToString(s: any) {
+        try {
+          if (!s) return '';
+          // Use Response to consume a ReadableStream or other body-like object
+          return await new Response(s).text();
+        } catch (err) {
+          return '';
+        }
+      }
+
+      // Sanitize attachments: keep only metadata to avoid streaming binary into D1
+      const sanitizedAttachments = Array.isArray(attachments)
+        ? attachments.map((a: any) => ({ name: a && a.name ? a.name : a.filename || null, size: a && a.size ? a.size : null, type: a && a.type ? a.type : null }))
+        : [];
+
+      // Ensure raw is a string (Email Routing may supply a ReadableStream)
+      let rawString = '';
+      if (typeof message.raw === 'string') {
+        rawString = message.raw;
+      } else if (message.raw && (typeof message.raw.getReader === 'function' || typeof message.raw.stream === 'function')) {
+        rawString = await streamToString(message.raw);
+      } else if (message.raw && typeof message.raw === 'object') {
+        // fallback: try Response
+        rawString = await streamToString(message.raw);
+      }
+
       try {
         const params = [
           id,
@@ -161,8 +188,8 @@ export default {
           text,
           html,
           JSON.stringify(headers || {}),
-          JSON.stringify(attachments || []),
-          message.raw || '',
+          JSON.stringify(sanitizedAttachments || []),
+          rawString || '',
           size,
           subdomain,
         ];
