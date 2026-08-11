@@ -9,6 +9,26 @@ function subdomainFromHost(host: string) {
   return parts.length > 2 ? parts[0] : '';
 }
 
+// Parse RFC-5322 style headers from a raw email string into a simple map.
+function parseEmailHeaders(raw: string) {
+  const out: Record<string, string> = {};
+  if (!raw) return out;
+  // Split headers / body
+  const split = raw.split(/\r?\n\r?\n/);
+  const headerBlock = split.length ? split[0] : raw;
+  // Unfold folded header lines (replace CRLF + SP/TAB with a single space)
+  const unfolded = headerBlock.replace(/\r?\n[ \t]+/g, ' ');
+  const lines = unfolded.split(/\r?\n/);
+  for (const line of lines) {
+    const idx = line.indexOf(':');
+    if (idx === -1) continue;
+    const name = line.slice(0, idx).trim().toLowerCase();
+    const value = line.slice(idx + 1).trim();
+    if (!out[name]) out[name] = value;
+  }
+  return out;
+}
+
 function selectDbForSubdomain(subdomain: string, env: Env) {
   // For now there is only one D1: services-email bound to SERVICES_EMAIL.
   // Extend this function to map other subdomains to different D1 bindings.
@@ -175,19 +195,27 @@ export default {
         rawString = await streamToString(message.raw);
       }
 
+      // If some fields are missing, try to parse headers from raw and merge
+      const parsedFromRaw = parseEmailHeaders(rawString || '');
+      const mergedHeaders = Object.assign({}, headers || {}, parsedFromRaw || {});
+      const finalFrom = fromField || parsedFromRaw['from'] || '';
+      const finalSubject = subject || parsedFromRaw['subject'] || '';
+      const finalMessageId = messageId || parsedFromRaw['message-id'] || parsedFromRaw['message-id'] || '';
+      const finalRecipients = recipients || parsedFromRaw['to'] || '';
+
       try {
         const params = [
           id,
           received_at,
-          messageId,
-          fromField,
-          recipients,
-          message.cc || '',
-          message.bcc || '',
-          subject,
+          finalMessageId,
+          finalFrom,
+          finalRecipients,
+          message.cc || parsedFromRaw['cc'] || '',
+          message.bcc || parsedFromRaw['bcc'] || '',
+          finalSubject,
           text,
           html,
-          JSON.stringify(headers || {}),
+          JSON.stringify(mergedHeaders || {}),
           JSON.stringify(sanitizedAttachments || []),
           rawString || '',
           size,
