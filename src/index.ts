@@ -75,6 +75,91 @@ function selectDbForSubdomain(subdomain: string, env: Env) {
   return env.SERVICES_EMAIL;
 }
 
+const ATTACHMENT_SIZE_LIMIT = 10 * 1024 * 1024; // 10 MB
+
+function uint8ArrayToBase64(bytes: Uint8Array) {
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const sub = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, Array.prototype.slice.call(sub));
+  }
+  return btoa(binary);
+}
+
+async function readAttachmentContent(att: any): Promise<{ base64: string | null; size: number | null }>{
+  try {
+    // Determine size if provided
+    let size: number | null = null;
+    if (typeof att.size === 'number') size = att.size;
+    if (!size && typeof att.length === 'number') size = att.length;
+
+    // If there's an explicit ArrayBuffer-like access
+    if (typeof att.arrayBuffer === 'function') {
+      const buf = await att.arrayBuffer();
+      size = buf.byteLength;
+      if (size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
+      const b64 = uint8ArrayToBase64(new Uint8Array(buf));
+      return { base64: b64, size };
+    }
+
+    // If it's already an ArrayBuffer or Uint8Array
+    if (att instanceof ArrayBuffer) {
+      const buf = att as ArrayBuffer;
+      size = buf.byteLength;
+      if (size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
+      return { base64: uint8ArrayToBase64(new Uint8Array(buf)), size };
+    }
+    if (att && att.buffer instanceof ArrayBuffer) {
+      const buf = att.buffer as ArrayBuffer;
+      size = buf.byteLength;
+      if (size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
+      return { base64: uint8ArrayToBase64(new Uint8Array(buf)), size };
+    }
+
+    // If it's a ReadableStream or body-like, use Response to read
+    if (att && (typeof att.getReader === 'function' || typeof att.stream === 'function' || typeof att.body === 'object')) {
+      const buf = await new Response(att).arrayBuffer();
+      size = buf.byteLength;
+      if (size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
+      return { base64: uint8ArrayToBase64(new Uint8Array(buf)), size };
+    }
+
+    // If att.data is a base64 string already or a binary string
+    if (typeof att.data === 'string') {
+      // Heuristic: treat as already base64 if it's longish and contains base64 chars
+      const maybe = att.data;
+      if (maybe.length > 100 && /^[A-Za-z0-9+/=\s]+$/.test(maybe)) return { base64: maybe.replace(/\s+/g, ''), size: maybe.length };
+      return { base64: btoa(maybe), size: maybe.length };
+    }
+
+    return { base64: null, size: size };
+  } catch (e) {
+    return { base64: null, size: null };
+  }
+}
+
+async function processAttachmentsArray(arr: any[]): Promise<any[]> {
+  if (!Array.isArray(arr)) return [];
+  const out: any[] = [];
+  for (const a of arr) {
+    try {
+      const name = a && (a.name || a.filename || a.fileName || (a.headers && a.headers['content-disposition'] && (() => {
+        const m = String(a.headers['content-disposition']).match(/filename="?([^";]+)"?/);
+        return m ? m[1] : null;
+      })())) || null;
+      const type = a && (a.contentType || a.type || a.mime || (a.headers && (a.headers['content-type'] || a.headers['Content-Type'])) ) || null;
+      const { base64, size } = await readAttachmentContent(a);
+      let finalSize = size;
+      if (!finalSize && typeof a.size === 'number') finalSize = a.size;
+      out.push({ base64: base64 === null ? null : base64, format: type || null, name: name || null, size: finalSize || null });
+    } catch (e) {
+      out.push({ base64: null, format: null, name: null, size: null });
+    }
+  }
+  return out;
+}
+
 export default {
   async fetch(request: Request, env: Env) {
     if (request.method !== 'POST') {
@@ -102,25 +187,23 @@ export default {
         payload.html = form.get('html')?.toString() || '';
         payload.messageId = form.get('message-id')?.toString() || form.get('messageId')?.toString() || '';
         payload.raw = form.get('raw')?.toString() || '';
-        // attachments metadata
-        const attachments: any[] = [];
+        // attachments (collect raw File/Blob objects to process later)
+        const attachmentsRaw: any[] = [];
         const anyForm = form as any;
         if (typeof anyForm.entries === 'function') {
           for (const entry of anyForm.entries()) {
             const [k, v] = entry as [string, any];
-            if (v && typeof v.arrayBuffer === 'function') {
-              const file = v as any;
-              attachments.push({ field: k, name: file.name, size: file.size, type: file.type });
+            if (v) {
+              // if file-like, push the object so we can read arrayBuffer later
+              attachmentsRaw.push(v);
             }
           }
         } else {
           const maybeAttach = anyForm.get ? (anyForm.get('attachment') || anyForm.get('attachments')) : null;
-          if (maybeAttach && typeof maybeAttach.arrayBuffer === 'function') {
-            const file = maybeAttach as any;
-            attachments.push({ field: 'attachment', name: file.name, size: file.size, type: file.type });
-          }
+          if (maybeAttach) attachmentsRaw.push(maybeAttach);
         }
-        payload.attachments = attachments;
+        // process attachments into { base64, format, name, size }
+        payload.attachments = await processAttachmentsArray(attachmentsRaw);
         // capture headers if sent as a field
         const headersField = form.get('headers')?.toString();
         if (headersField) {
@@ -220,18 +303,8 @@ export default {
         }
       }
 
-      // Sanitize attachments: keep only metadata to avoid streaming binary into D1
-      const sanitizedAttachments = Array.isArray(attachments)
-        ? attachments.map((a: any) => {
-            const name = a && (a.name || a.filename || a.fileName || (a.headers && a.headers['content-disposition'] && (() => {
-              const m = String(a.headers['content-disposition']).match(/filename="?([^";]+)"?/);
-              return m ? m[1] : null;
-            })())) || null;
-            const type = a && (a.contentType || a.type || a.mime || (a.headers && (a.headers['content-type'] || a.headers['Content-Type'])) ) || null;
-            const size = a && (a.size || a.length || (typeof a.data === 'string' ? a.data.length : null)) || null;
-            return { name, size, type };
-          })
-        : [];
+      // Process attachments into full objects with base64 (or "Attachment too large")
+      const sanitizedAttachments = await processAttachmentsArray(attachments);
 
       // Ensure raw is a string (Email Routing may supply a ReadableStream)
       let rawString = '';
