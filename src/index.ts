@@ -142,9 +142,15 @@ async function readAttachmentContent(att: any): Promise<{ base64: string | null;
 }
 
 async function processAttachmentsArray(arr: any[]): Promise<any[]> {
-  if (!Array.isArray(arr)) return [];
+  // Accept arrays, single objects, or maps of attachments
+  if (!arr) return [];
+  let items: any[];
+  if (Array.isArray(arr)) items = arr;
+  else if (typeof arr === 'object') items = Object.values(arr);
+  else items = [arr];
+
   const out: any[] = [];
-    for (const a of arr) {
+  for (const a of items) {
     try {
       const name = a && (a.name || a.filename || a.fileName || (a.headers && a.headers['content-disposition'] && (() => {
         const m = String(a.headers['content-disposition']).match(/filename="?([^";]+)"?/);
@@ -203,6 +209,12 @@ export default {
         } else {
           const maybeAttach = anyForm.get ? (anyForm.get('attachment') || anyForm.get('attachments')) : null;
           if (maybeAttach) attachmentsRaw.push(maybeAttach);
+        }
+        // Inspect raw attachments collected from form
+        try {
+          console.log('fetch() attachments raw', { count: attachmentsRaw.length, sample: attachmentsRaw.slice(0,3).map(a => ({ type: typeof a, keys: a && typeof a === 'object' ? Object.keys(a).slice(0,5) : null })) });
+        } catch (e) {
+          console.log('fetch() attachments raw cannot stringify', e);
         }
         // process attachments into { base64, format, name, size }
         payload.attachments = await processAttachmentsArray(attachmentsRaw);
@@ -306,6 +318,16 @@ export default {
         }
       }
 
+      // Inspect raw attachments provided by Email Routing
+      try {
+        if (Array.isArray(attachments)) {
+          console.log('email() attachments raw', { count: attachments.length, sample: attachments.slice(0,3).map(a => ({ keys: a && typeof a === 'object' ? Object.keys(a).slice(0,5) : null })) });
+        } else {
+          console.log('email() attachments raw (non-array)', { type: typeof attachments, sample: attachments });
+        }
+      } catch (e) {
+        console.log('email() attachments raw cannot stringify', e);
+      }
       // Process attachments into full objects with base64 (or "Attachment too large")
       const sanitizedAttachments = await processAttachmentsArray(attachments);
       console.log('email() attachments processed', { count: sanitizedAttachments.length, sample: sanitizedAttachments.slice(0,3) });
