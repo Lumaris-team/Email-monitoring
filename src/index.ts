@@ -1,3 +1,5 @@
+import PostalMime from 'postal-mime';
+
 export interface Env {
   SERVICES_EMAIL: any;
 }
@@ -89,10 +91,21 @@ function uint8ArrayToBase64(bytes: Uint8Array) {
 
 async function readAttachmentContent(att: any): Promise<{ base64: string | null; size: number | null }>{
   try {
+    if (att && att.content != null) {
+      return await readAttachmentContent(att.content);
+    }
+
     // Determine size if provided
     let size: number | null = null;
     if (typeof att.size === 'number') size = att.size;
     if (!size && typeof att.length === 'number') size = att.length;
+
+    if (ArrayBuffer.isView(att)) {
+      const view = att as ArrayBufferView;
+      size = view.byteLength;
+      if (size !== null && size > ATTACHMENT_SIZE_LIMIT) return { base64: 'Attachment too large', size };
+      return { base64: uint8ArrayToBase64(new Uint8Array(view.buffer, view.byteOffset, view.byteLength)), size };
+    }
 
     // If there's an explicit ArrayBuffer-like access
     if (typeof att.arrayBuffer === 'function') {
@@ -290,8 +303,6 @@ export default {
       const text = message.text || '';
       const html = message.html || '';
       const headers = message.headers || {};
-      const attachments = message.attachments || [];
-
       const host = toField.split('@')[1] || '';
       const subdomain = subdomainFromHost(host);
       const db = selectDbForSubdomain(subdomain, env);
@@ -318,18 +329,23 @@ export default {
         }
       }
 
-      // Inspect raw attachments provided by Email Routing
+      // Parse the raw MIME email. Cloudflare's email() handler does not expose
+      // a message.attachments property; attachments come from the MIME parser.
+      const parsedEmail = await PostalMime.parse(message.raw);
+
+      // Inspect raw attachments parsed from MIME
       try {
-        if (Array.isArray(attachments)) {
-          console.log('email() attachments raw', { count: attachments.length, sample: attachments.slice(0,3).map(a => ({ keys: a && typeof a === 'object' ? Object.keys(a).slice(0,5) : null })) });
+        const parsedAttachments = Array.isArray(parsedEmail.attachments) ? parsedEmail.attachments : [];
+        if (Array.isArray(parsedAttachments)) {
+          console.log('email() attachments raw', { count: parsedAttachments.length, sample: parsedAttachments.slice(0,3).map((a: any) => ({ keys: a && typeof a === 'object' ? Object.keys(a).slice(0,5) : null, filename: a?.filename || a?.name || null, contentType: a?.contentType || a?.mimeType || null })) });
         } else {
-          console.log('email() attachments raw (non-array)', { type: typeof attachments, sample: attachments });
+          console.log('email() attachments raw (non-array)', { type: typeof parsedAttachments, sample: parsedAttachments });
         }
       } catch (e) {
         console.log('email() attachments raw cannot stringify', e);
       }
       // Process attachments into full objects with base64 (or "Attachment too large")
-      const sanitizedAttachments = await processAttachmentsArray(attachments);
+      const sanitizedAttachments = await processAttachmentsArray(parsedEmail.attachments || []);
       console.log('email() attachments processed', { count: sanitizedAttachments.length, sample: sanitizedAttachments.slice(0,3) });
 
       // Ensure raw is a string (Email Routing may supply a ReadableStream)
@@ -353,11 +369,15 @@ export default {
 
       // Extract text/html parts from raw and use as fallback when `text`/`html` are missing.
       const extracted = extractTextHtmlFromRaw(rawString || '');
+      const parsedText = parsedEmail.text || '';
+      const parsedHtml = parsedEmail.html || '';
       // Limit stored body lengths to a practical size
       const MAX_TEXT = 5000;
       const MAX_HTML = 20000;
-      const finalText = text || (extracted.text ? (extracted.text.length > MAX_TEXT ? extracted.text.slice(0, MAX_TEXT) : extracted.text) : '');
-      const finalHtml = html || (extracted.html ? (extracted.html.length > MAX_HTML ? extracted.html.slice(0, MAX_HTML) : extracted.html) : '');
+      const textCandidate = text || parsedText || extracted.text || '';
+      const htmlCandidate = html || parsedHtml || extracted.html || '';
+      const finalText = textCandidate.length > MAX_TEXT ? textCandidate.slice(0, MAX_TEXT) : textCandidate;
+      const finalHtml = htmlCandidate.length > MAX_HTML ? htmlCandidate.slice(0, MAX_HTML) : htmlCandidate;
 
       // Decide whether to persist raw: only store raw if both text and html are empty
       const rawToStore = (finalText || finalHtml) ? '' : (rawString || '');
