@@ -103,4 +103,54 @@ export default {
 
     return new Response(JSON.stringify({ ok: true, id }), { status: 201, headers: { 'content-type': 'application/json' } });
   }
+,
+
+  // Handle incoming emails from Email Routing
+  async email(message: any, env: Env, ctx: any) {
+    try {
+      const toField = Array.isArray(message.to) ? (message.to[0] || '') : (message.to || '');
+      const fromField = message.from || '';
+      const subject = message.subject || '';
+      const text = message.text || '';
+      const html = message.html || '';
+      const headers = message.headers || {};
+      const attachments = message.attachments || [];
+
+      const host = toField.split('@')[1] || '';
+      const subdomain = subdomainFromHost(host);
+      const db = selectDbForSubdomain(subdomain, env);
+
+      const id = crypto.randomUUID();
+      const received_at = new Date().toISOString();
+
+      const stmt = db.prepare(
+        `INSERT INTO emails (id, received_at, message_id, sender, recipients, cc, bcc, subject, text_body, html_body, headers, attachments, raw, size, subdomain)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+
+      const messageId = message.messageId || message['message-id'] || '';
+      const recipients = toField || '';
+      const size = message.size || 0;
+
+      await stmt.run(
+        id,
+        received_at,
+        messageId,
+        fromField,
+        recipients,
+        message.cc || '',
+        message.bcc || '',
+        subject,
+        text,
+        html,
+        JSON.stringify(headers || {}),
+        JSON.stringify(attachments || []),
+        message.raw || '',
+        size,
+        subdomain
+      );
+    } catch (e) {
+      // swallow errors to avoid blocking email routing; consider logging
+    }
+  }
 }

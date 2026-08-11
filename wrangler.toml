@@ -17,3 +17,10 @@ database_id = "5269c612-421e-4d93-bfa2-ec69040123c5"
 [[routes]]
 pattern = "services.lumaris.fr.eu.org/*"
 zone_id = "58779ba4346f0bbfedba0574f3bf0598"
+
+# Email bindings for Email Routing
+[[send_email]]
+name = "EMAIL"
+
+[[email]]
+name = "EMAIL_HANDLER"
