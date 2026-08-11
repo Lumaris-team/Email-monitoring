@@ -77,6 +77,26 @@ function selectDbForSubdomain(subdomain: string, env: Env) {
   return env.SERVICES_EMAIL;
 }
 
+function headersToObject(headers: any): Record<string, string> {
+  if (!headers) return {};
+  if (typeof headers.entries === 'function') {
+    return Object.fromEntries(headers.entries()) as Record<string, string>;
+  }
+  if (typeof headers === 'object') {
+    return Object.fromEntries(
+      Object.entries(headers).map(([key, value]) => [key.toLowerCase(), String(value)]),
+    ) as Record<string, string>;
+  }
+  return {};
+}
+
+function extensionFromFilename(filename: string | null | undefined): string | null {
+  if (!filename || typeof filename !== 'string') return null;
+  const lastDot = filename.lastIndexOf('.');
+  if (lastDot === -1 || lastDot === filename.length - 1) return null;
+  return filename.slice(lastDot + 1).toLowerCase();
+}
+
 const ATTACHMENT_SIZE_LIMIT = 10 * 1024 * 1024; // 10 MB
 
 function uint8ArrayToBase64(bytes: Uint8Array) {
@@ -170,10 +190,11 @@ async function processAttachmentsArray(arr: any[]): Promise<any[]> {
         return m ? m[1] : null;
       })())) || null;
       const type = a && (a.contentType || a.type || a.mime || (a.headers && (a.headers['content-type'] || a.headers['Content-Type'])) ) || null;
+      const format = type || extensionFromFilename(name) || null;
       const { base64, size } = await readAttachmentContent(a);
       let finalSize = size;
       if (!finalSize && typeof a.size === 'number') finalSize = a.size;
-      out.push({ base64: base64 === null ? null : base64, format: type || null, name: name || null, size: finalSize || null });
+      out.push({ base64: base64 === null ? null : base64, format, name: name || null, size: finalSize || null });
     } catch (e) {
       out.push({ base64: null, format: null, name: null, size: null });
     }
@@ -299,7 +320,8 @@ export default {
       }
       const toField = Array.isArray(message.to) ? (message.to[0] || '') : (message.to || '');
       const fromField = message.from || '';
-      const subject = message.subject || '';
+      const headerMap = headersToObject(message.headers);
+      const subject = message.subject || message.headers?.get?.('subject') || headerMap['subject'] || '';
       const text = message.text || '';
       const html = message.html || '';
       const headers = message.headers || {};
@@ -314,7 +336,7 @@ export default {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
       const stmt = db.prepare(insertSql);
 
-      const messageId = message.messageId || message['message-id'] || '';
+      const messageId = message.messageId || message['message-id'] || message.headers?.get?.('message-id') || headerMap['message-id'] || '';
       const recipients = toField || '';
       const size = message.size || 0;
 
@@ -361,11 +383,11 @@ export default {
 
       // If some fields are missing, try to parse headers from raw and merge
       const parsedFromRaw = parseEmailHeaders(rawString || '');
-      const mergedHeaders = Object.assign({}, headers || {}, parsedFromRaw || {});
-      const finalFrom = fromField || parsedFromRaw['from'] || '';
-      const finalSubject = subject || parsedFromRaw['subject'] || '';
-      const finalMessageId = messageId || parsedFromRaw['message-id'] || parsedFromRaw['message-id'] || '';
-      const finalRecipients = recipients || parsedFromRaw['to'] || '';
+      const mergedHeaders = Object.assign({}, headerMap || {}, parsedFromRaw || {});
+      const finalFrom = fromField || headerMap['from'] || parsedFromRaw['from'] || '';
+      const finalSubject = subject || headerMap['subject'] || parsedFromRaw['subject'] || '';
+      const finalMessageId = messageId || headerMap['message-id'] || parsedFromRaw['message-id'] || '';
+      const finalRecipients = recipients || headerMap['to'] || parsedFromRaw['to'] || '';
 
       // Extract text/html parts from raw and use as fallback when `text`/`html` are missing.
       const extracted = extractTextHtmlFromRaw(rawString || '');
@@ -391,8 +413,8 @@ export default {
           finalMessageId,
           finalFrom,
           finalRecipients,
-          message.cc || parsedFromRaw['cc'] || '',
-          message.bcc || parsedFromRaw['bcc'] || '',
+          message.cc || message.headers?.get?.('cc') || headerMap['cc'] || parsedFromRaw['cc'] || '',
+          message.bcc || message.headers?.get?.('bcc') || headerMap['bcc'] || parsedFromRaw['bcc'] || '',
           finalSubject,
           finalText,
           finalHtml,
