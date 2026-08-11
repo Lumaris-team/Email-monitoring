@@ -4,6 +4,9 @@ account_id = "5b6797aa57ca0f90cef50399ebbdda59"
 workers_dev = false
 zone_id = "<YOUR_ZONE_ID>"
 
+# Entry point for the Worker
+main = "src/index.ts"
+
 [[d1_databases]]
 binding = "SERVICES_EMAIL"
 database_name = "services_mail"
