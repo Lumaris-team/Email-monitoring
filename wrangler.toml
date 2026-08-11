@@ -14,4 +14,6 @@ database_id = "5269c612-421e-4d93-bfa2-ec69040123c5"
 
 # Routes: configure Email Routing to forward to this worker endpoint.
 # Example route (adjust to your DNS / Email Routing settings):
-routes = ["services.lumaris.fr.eu.org/*"]
+[[routes]]
+pattern = "services.lumaris.fr.eu.org/*"
+zone_id = "58779ba4346f0bbfedba0574f3bf0598"
