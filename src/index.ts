@@ -113,6 +113,11 @@ export default {
   // Handle incoming emails from Email Routing
   async email(message: any, env: Env, ctx: any) {
     try {
+      // Quick diagnostics: ensure the D1 binding is present in `env`.
+      if (!env || !env.SERVICES_EMAIL) {
+        console.error('email() handler: D1 binding `SERVICES_EMAIL` missing on env', Object.keys(env || {}));
+        return;
+      }
       const toField = Array.isArray(message.to) ? (message.to[0] || '') : (message.to || '');
       const fromField = message.from || '';
       const subject = message.subject || '';
@@ -137,23 +142,28 @@ export default {
       const recipients = toField || '';
       const size = message.size || 0;
 
-      await stmt.run(
-        id,
-        received_at,
-        messageId,
-        fromField,
-        recipients,
-        message.cc || '',
-        message.bcc || '',
-        subject,
-        text,
-        html,
-        JSON.stringify(headers || {}),
-        JSON.stringify(attachments || []),
-        message.raw || '',
-        size,
-        subdomain
-      );
+      try {
+        const res = await stmt.run(
+          id,
+          received_at,
+          messageId,
+          fromField,
+          recipients,
+          message.cc || '',
+          message.bcc || '',
+          subject,
+          text,
+          html,
+          JSON.stringify(headers || {}),
+          JSON.stringify(attachments || []),
+          message.raw || '',
+          size,
+          subdomain
+        );
+        console.log('email() D1 INSERT result', { id, res });
+      } catch (innerErr) {
+        console.error('email() D1 INSERT failed', innerErr && innerErr.message ? innerErr.message : innerErr, innerErr && innerErr.stack ? innerErr.stack : 'no-stack');
+      }
     } catch (e) {
       console.error('email() handler error', e);
     }
